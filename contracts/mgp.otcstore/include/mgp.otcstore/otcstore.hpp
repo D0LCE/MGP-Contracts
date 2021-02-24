@@ -9,7 +9,7 @@
 #include <string>
 
 #include "wasm_db.hpp"
-#include "otcstore_entities.hpp"
+#include "otcstore_states.hpp"
 
 using namespace wasm::db;
 
@@ -42,21 +42,26 @@ if ( debug ) {                               \
    eosio::print( __VA_ARGS__ ); }}
 
 class [[eosio::contract("mgp.otcstore")]] mgp_otcstore: public eosio::contract {
-  private:
+private:
+    dbc                 _dbc;
     global_singleton    _global;
     global_t            _gstate;
-    dbc                 _dbc;
-
-  public:
+    global2_singleton   _global2;
+    global2_t           _gstate2;
+    
+public:
     using contract::contract;
     mgp_otcstore(eosio::name receiver, eosio::name code, datastream<const char*> ds):
-        contract(receiver, code, ds), _global(get_self(), get_self().value), _dbc(get_self())
+        _dbc(_self), contract(receiver, code, ds), 
+        _global(_self, _self.value), _global2(_self, _self.value)
     {
         _gstate = _global.exists() ? _global.get() : global_t{};
+        _gstate2 = _global2.exists() ? _global2.get() : global2_t{};
     }
 
     ~mgp_otcstore() {
         _global.set( _gstate, get_self() );
+        _global2.set( _gstate2, get_self() );
     }
 
     [[eosio::action]] //only code maintainer can init
@@ -75,7 +80,7 @@ class [[eosio::contract("mgp.otcstore")]] mgp_otcstore: public eosio::contract {
     void closeorder(const name& owner, const uint64_t& order_id);
 
     [[eosio::action]]
-    void opendeal(const name& taker, const uint64_t& order_id, const asset& deal_quantity);
+    void opendeal(const name& taker, const uint64_t& order_id, const asset& deal_quantity,const uint64_t& order_sn);
 
     [[eosio::action]]
     void closedeal(const name& taker, const uint64_t& deal_id);
@@ -85,12 +90,28 @@ class [[eosio::contract("mgp.otcstore")]] mgp_otcstore: public eosio::contract {
      *  @param: pass: 0: NO pass, 1: pass; two agreed passes means a decision! 
      */
     [[eosio::action]]
-    void passdeal(const name& owner, const uint8_t& user_type, const uint64_t& deal_id, const bool& pass);
+    void passdeal(const name& owner, const uint8_t& user_type, const uint64_t& deal_id, const bool& pass,const uint8_t& pay_type);
 
     [[eosio::on_notify("eosio.token::transfer")]]
     void deposit(name from, name to, asset quantity, string memo);
+
     [[eosio::action]]
     void withdraw(const name& owner, asset quantity);
+
+    [[eosio::action]]
+    void timeoutdeal();
+
+    [[eosio::action]]
+    void deltable();
+
+    [[eosio::action]]
+    void backdeal(const name& owner,const uint64_t& deal_id);
+
+    [[eosio::action]]
+    void restart(const name& owner,const uint64_t& deal_id,const uint8_t& user_type);
+
+    [[eosio::action]]
+    void setrate(const name& owner,const asset& mgp_price,const asset& usd_exchange_rate);
 
     using init_action       = action_wrapper<name("init"),        &mgp_otcstore::init       >;
     using setseller_action  = action_wrapper<name("setseller"),   &mgp_otcstore::setseller  >;
@@ -104,6 +125,11 @@ class [[eosio::contract("mgp.otcstore")]] mgp_otcstore: public eosio::contract {
     using transfer_action = action_wrapper<name("transfer"),      &mgp_otcstore::deposit    >;
 
     using withdraw_action = action_wrapper<name("withdraw"),      &mgp_otcstore::withdraw    >;
+    using timeoutdeal_action = action_wrapper<name("timeoutdeal"),&mgp_otcstore::timeoutdeal >;
+
+private:
+    void _init();
+    void _data_migrate();
 };
 
 inline vector <string> string_split(string str, char delimiter) {
